@@ -78,46 +78,28 @@ class FaceMatcher(BaseDetector):
         """Load DeepFace model and compute participant embedding"""
         try:
             # DeepFace models are loaded lazily on first use
-            # Pre-build the model to avoid delays during first inference
-            self.logger.info(f"Building DeepFace model ({self.model_name})...")
-            
-            # Build model (this caches the model internally)
-            from deepface.basemodels import Facenet, VGGFace, OpenFace, FbDeepFace, ArcFace, Dlib, SFace, Facenet512
-            
-            model_map = {
-                'VGG-Face': VGGFace.loadModel,
-                'Facenet': Facenet.loadModel,
-                'Facenet512': Facenet512.loadModel,
-                'OpenFace': OpenFace.loadModel,
-                'DeepFace': FbDeepFace.loadModel,
-                'ArcFace': ArcFace.loadModel,
-                'Dlib': Dlib.loadModel,
-                'SFace': SFace.load_model
-            }
-            
-            if self.model_name in model_map:
-                try:
-                    model_map[self.model_name]()
-                    self.logger.info(f"DeepFace model ({self.model_name}) built successfully")
-                except:
-                    # Some models might have different loading signatures
-                    self.logger.info(f"Model will be loaded on first use")
+            # We don't need to pre-load the model - it will load automatically when needed
+            self.logger.info(f"Initializing DeepFace matcher with model={self.model_name}")
+            self.logger.info("Model will be loaded automatically on first use")
             
             # Load and cache participant embedding
+            # This will trigger the model loading when it extracts the embedding
             self._load_participant_embedding()
             
-            self.initialized = True
-            self.logger.info("DeepFace face matcher loaded successfully")
-            return True
+            # Check if participant embedding was successfully loaded
+            if self.participant_embedding is not None:
+                self.initialized = True
+                self.logger.info("DeepFace face matcher loaded successfully")
+                return True
+            else:
+                self.logger.error("Failed to load participant embedding")
+                self.initialized = False
+                return False
             
         except Exception as e:
-            self.logger.error(f"Error loading DeepFace: {e}")
-            self.logger.info("Model will be loaded on first use")
-            
-            # Try to load participant embedding anyway
-            self._load_participant_embedding()
-            self.initialized = True
-            return True
+            self.logger.error(f"Error loading DeepFace: {e}", exc_info=True)
+            self.initialized = False
+            return False
     
     def _load_participant_embedding(self):
         """Load participant image and compute embedding for caching"""
