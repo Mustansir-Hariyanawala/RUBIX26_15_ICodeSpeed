@@ -54,16 +54,20 @@ class CameraPipeline:
             logging.error("Failed to start camera")
             return False
         
-        # Initialize display
-        self.display = DisplayWindow(
-            window_name=self.config.WINDOW_NAME,
-            fullscreen=self.config.FULLSCREEN
-        )
-        
-        if not self.display.create_window():
-            logging.error("Failed to create display window")
-            self.camera.stop()
-            return False
+        # Initialize display only if DISPLAY_FEED is enabled
+        if getattr(self.config, 'DISPLAY_FEED', True):
+            self.display = DisplayWindow(
+                window_name=self.config.WINDOW_NAME,
+                fullscreen=self.config.FULLSCREEN
+            )
+            
+            if not self.display.create_window():
+                logging.error("Failed to create display window")
+                self.camera.stop()
+                return False
+        else:
+            self.display = None
+            logging.info("Display disabled (background mode)")
         
         logging.info("Pipeline initialized successfully")
         return True
@@ -110,16 +114,21 @@ class CameraPipeline:
                 # Process frame (can be overridden)
                 processed_frame = self.process_frame(frame)
                 
-                # Display frame
-                if self.config.SHOW_FPS:
-                    self.display.show_frame(processed_frame, fps=fps)
+                # Display frame only if DISPLAY_FEED is enabled
+                if self.display:
+                    if self.config.SHOW_FPS:
+                        self.display.show_frame(processed_frame, fps=fps)
+                    else:
+                        self.display.show_frame(processed_frame)
+                    
+                    # Check for exit key
+                    if self.display.check_exit_key(1):
+                        logging.info("Exit key pressed")
+                        break
                 else:
-                    self.display.show_frame(processed_frame)
-                
-                # Check for exit key
-                if self.display.check_exit_key(1):
-                    logging.info("Exit key pressed")
-                    break
+                    # In background mode, check for keyboard interrupt or use time-based exit
+                    # Small delay to prevent CPU spinning
+                    time.sleep(0.001)
                 
                 # Calculate FPS
                 frame_count += 1

@@ -217,8 +217,11 @@ class ProctorPipeline(CameraPipeline):
         
         # Check if we should process this frame
         if self.frame_counter <= self.frame_skip:
-            # Skip processing, just return the frame with basic overlay
-            return self._add_skip_overlay(frame)
+            # Skip processing, return frame as-is (no overlay if display is disabled)
+            if getattr(self.config, 'DISPLAY_FEED', True):
+                return self._add_skip_overlay(frame)
+            else:
+                return frame
         
         # Reset counter
         self.frame_counter = 0
@@ -311,27 +314,29 @@ class ProctorPipeline(CameraPipeline):
                     self.logger.error(f"Error during eye detection: {e}")
                     self.session_logger.log_alert('eye_detection_error', f"Eye detection failed: {e}", 'info')
         
-        # Draw face meshes on frame with configuration
-        if face_meshes and self.face_detector:
-            show_all = getattr(self.config, 'SHOW_ALL_FACE_LANDMARKS', False)
-            show_nums = getattr(self.config, 'SHOW_LANDMARK_NUMBERS', False)
-            annotated_frame = self.face_detector.draw_faces(
-                annotated_frame, 
-                face_meshes,
-                show_all_landmarks=show_all,
-                show_landmark_numbers=show_nums
-            )
-        
-        # Draw eye detection results if available
-        if eye_result and self.eye_detector:
-            try:
-                # Use process_frame to get annotated output
-                annotated_frame, _ = self.eye_detector.process_frame(annotated_frame, face_meshes, draw=True)
-            except Exception as e:
-                self.logger.error(f"Error drawing eye keypoints: {e}")
-        
-        # Add verification status overlay (top left)
-        annotated_frame = self._add_verification_overlay(annotated_frame, num_faces, verification_result, eye_result)
+        # Only draw annotations if DISPLAY_FEED is enabled
+        if getattr(self.config, 'DISPLAY_FEED', True):
+            # Draw face meshes on frame with configuration
+            if face_meshes and self.face_detector:
+                show_all = getattr(self.config, 'SHOW_ALL_FACE_LANDMARKS', False)
+                show_nums = getattr(self.config, 'SHOW_LANDMARK_NUMBERS', False)
+                annotated_frame = self.face_detector.draw_faces(
+                    annotated_frame, 
+                    face_meshes,
+                    show_all_landmarks=show_all,
+                    show_landmark_numbers=show_nums
+                )
+            
+            # Draw eye detection results if available
+            if eye_result and self.eye_detector:
+                try:
+                    # Use process_frame to get annotated output
+                    annotated_frame, _ = self.eye_detector.process_frame(annotated_frame, face_meshes, draw=True)
+                except Exception as e:
+                    self.logger.error(f"Error drawing eye keypoints: {e}")
+            
+            # Add verification status overlay (top left)
+            annotated_frame = self._add_verification_overlay(annotated_frame, num_faces, verification_result, eye_result)
         
         return annotated_frame
     
@@ -677,7 +682,8 @@ class ProctorPipeline(CameraPipeline):
         Args:
             frame: Frame to display
         """
-        if not self.display:
+        # Skip display if DISPLAY_FEED is disabled or display not initialized
+        if not self.display or not getattr(self.config, 'DISPLAY_FEED', True):
             return
         
         # Add FPS if enabled

@@ -17,6 +17,7 @@ class ProctorConfig:
     WINDOW_NAME = "Proctoring System"
     FULLSCREEN = False
     SHOW_FPS = True
+    DISPLAY_FEED = True  # When False, no frames are displayed (background mode)
     
     # Pipeline Settings
     ENABLE_LOGGING = True
