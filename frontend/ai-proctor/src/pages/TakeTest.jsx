@@ -18,6 +18,7 @@ const TakeTest = () => {
   const { testId } = useParams();
   const navigate = useNavigate();
   const webcamRef = useRef(null);
+  const isSubmittingRef = useRef(false); 
 
   // Test state
   const [testStarted, setTestStarted] = useState(false);
@@ -37,6 +38,8 @@ const TakeTest = () => {
     lookingAway: false,
     tabSwitches: 0
   });
+  const [showWarning, setShowWarning] = useState(false);
+  const MAX_SWITCH_LIMIT = 3;
 
   // Mock questions
   const questions = mockQuestions;
@@ -59,28 +62,50 @@ const TakeTest = () => {
   }, [testStarted, testSubmitted, timeRemaining]);
 
   // Tab visibility monitoring
-  useEffect(() => {
-    if (testStarted && !testSubmitted) {
-      const handleVisibilityChange = () => {
-        if (document.hidden) {
-          const newViolation = {
-            type: 'tab-switch',
-            timestamp: new Date().toISOString(),
-            severity: 'medium'
-          };
-          setViolations(prev => [...prev, newViolation]);
-          setProctoringData(prev => ({
-            ...prev,
-            tabSwitches: prev.tabSwitches + 1
-          }));
-          setRiskScore(prev => Math.min(100, prev + 10));
-        }
-      };
+useEffect(() => {
+  if (testStarted && !testSubmitted) {
+    const handleVisibilityChange = () => {
+      // Check the ref to see if we are already in the process of submitting
+      if (document.hidden && !isSubmittingRef.current) {
+        const newViolation = {
+          type: 'tab-switch',
+          timestamp: new Date().toISOString(),
+          severity: 'medium'
+        };
 
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }
-  }, [testStarted, testSubmitted]);
+        setViolations(prev => {
+          const updatedViolations = [...prev, newViolation];
+          const switchCount = updatedViolations.filter(v => v.type === 'tab-switch').length;
+
+          // Check if limit is reached AND we haven't started submitting yet
+          if (switchCount >= 3 && !isSubmittingRef.current) {
+            isSubmittingRef.current = true; // Lock the submission process immediately
+            alert("Maximum tab switches reached. Your test is being submitted.");
+            
+            // Bypass the window.confirm in handleSubmitTest for auto-submission
+            setTestSubmitted(true); 
+            setTimeout(() => {
+              navigate('/student/results');
+            }, 2000);
+          } else if (switchCount < 3) {
+            setShowWarning(true);
+          }
+          
+          return updatedViolations;
+        });
+
+        setProctoringData(prev => ({
+          ...prev,
+          tabSwitches: prev.tabSwitches + 1
+        }));
+        setRiskScore(prev => Math.min(100, prev + 20));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }
+}, [testStarted, testSubmitted, navigate]);
 
   // Simulated AI proctoring (replace with actual AI when backend is ready)
   useEffect(() => {
@@ -439,6 +464,31 @@ const TakeTest = () => {
           </div>
         </div>
       </div>
+      {/* Tab Switch Warning Modal */}
+      {showWarning && (
+        <div className="fixed inset-0 bg-dark-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+          <div className="card max-w-md w-full p-8 border-red-500 border-4">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+              <h2 className="text-2xl font-display font-bold text-red-600 mb-2">
+                Warning: Tab Switch Detected!
+              </h2>
+              <p className="text-dark-700 mb-6">
+                You have switched tabs {proctoringData.tabSwitches} time(s). 
+                Switching tabs more than <strong>{MAX_SWITCH_LIMIT}</strong> times will result in automatic submission.
+              </p>
+              <button
+                onClick={() => setShowWarning(false)}
+                className="btn-danger w-full py-4 text-lg font-bold"
+              >
+                I Understand, Return to Test
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
