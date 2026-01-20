@@ -3,7 +3,7 @@ Proctoring System - Main Application
 Optimized version using MediaPipe + DeepFace pipeline
 """
 
-from modules import ProctorPipeline, FaceDetector, FaceMatcher, Config
+from modules import ProctorPipeline, FaceDetector, FaceMatcher, EyeMovementDetector, Config
 import cv2
 
 
@@ -12,11 +12,14 @@ def main():
     
     # Configure the system
     Config.WINDOW_NAME = "AI Proctoring System - DeepFace Optimized"
-    Config.FRAME_SKIP = 2  # Process every 3rd frame
+    Config.FRAME_SKIP = 0  # Process every frame
     Config.SHOW_FPS = True
     Config.FACE_DETECTION_ENABLED = True
     Config.FACE_MATCHING_ENABLED = True
     Config.PARTICIPANT_DATA_PATH = "data/participant.png"
+    Config.SHOW_ALL_FACE_LANDMARKS = False  # Enable all 478 face mesh points
+    Config.SHOW_LANDMARK_NUMBERS = False  # Set to True to see landmark numbers
+    Config.EYE_TRACKING_ENABLED = True  # Enable eye tracking
     
     print("\n" + "="*70)
     print(" AI PROCTORING SYSTEM - DEEPFACE OPTIMIZED".center(70))
@@ -32,7 +35,7 @@ def main():
     print(f"Log Directory: {Config.PROCTORING_LOG_DIR}")
     
     # Create and register face detector (MediaPipe)
-    print("\n[1/2] Setting up Face Detector (MediaPipe)...")
+    print("\n[1/3] Setting up Face Detector (MediaPipe)...")
     face_detector = FaceDetector(
         name="FaceDetector",
         enabled=Config.FACE_DETECTION_ENABLED,
@@ -46,10 +49,13 @@ def main():
         return
     
     print("✓ Face detector registered successfully")
+    print(f"  • Face mesh landmarks: 478 points (468 face + 10 iris)")
+    print(f"  • Show all landmarks: {Config.SHOW_ALL_FACE_LANDMARKS}")
+    print(f"  • Show landmark numbers: {Config.SHOW_LANDMARK_NUMBERS}")
     
     # Create and register face matcher (DeepFace with configurable backend)
     if Config.FACE_MATCHING_ENABLED:
-        print(f"\n[2/2] Setting up Face Matcher (DeepFace - {Config.FACE_MATCHING_BACKEND})...")
+        print(f"\n[2/3] Setting up Face Matcher (DeepFace - {Config.FACE_MATCHING_BACKEND})...")
         face_matcher = FaceMatcher(
             name="FaceMatcher",
             enabled=True,
@@ -65,10 +71,31 @@ def main():
         
         print("✓ Face matcher registered successfully")
     
+    # Create and register eye movement detector
+    if Config.EYE_TRACKING_ENABLED:
+        print(f"\n[3/3] Setting up Eye Movement Detector (MediaPipe-based)...")
+        try:
+            eye_detector = EyeMovementDetector(
+                name="EyeMovementDetector",
+                enabled=True
+            )
+            
+            if not proctor.register_detector(eye_detector):
+                print("WARNING: Failed to register eye detector - continuing without it")
+                Config.EYE_TRACKING_ENABLED = False
+            else:
+                print("✓ Eye movement detector registered successfully")
+                print(f"  • Uses MediaPipe face mesh landmarks")
+                print(f"  • No external model required")
+        except Exception as e:
+            print(f"WARNING: Could not initialize eye detector: {e}")
+            print("  Continuing without eye tracking...")
+            Config.EYE_TRACKING_ENABLED = False
+    
     # You can easily add more detectors here
     # Example:
-    # eye_detector = EyeMovementDetector(model_path="cv_models/best.pt")
-    # proctor.register_detector(eye_detector)
+    # phone_detector = PhoneDetector(model_path="cv_models/phone_model.pt")
+    # proctor.register_detector(phone_detector)
     
     print("\n" + "-"*70)
     print("SYSTEM STATUS:")
@@ -82,10 +109,17 @@ def main():
     print("-"*70)
     print("\nCONTROLS:")
     print("  • Press 'q' or ESC to quit and generate report")
+    if Config.EYE_TRACKING_ENABLED:
+        print("  • Press 'c' to calibrate eye tracking")
     print("\nPERFORMANCE:")
     print(f"  • Processing every {Config.FRAME_SKIP + 1} frames")
     print(f"  • Camera FPS: {Config.CAMERA_FPS}")
     print(f"  • Effective processing rate: ~{Config.CAMERA_FPS / (Config.FRAME_SKIP + 1):.1f} FPS")
+    
+    print("\nVISUALIZATION:")
+    print(f"  • Face mesh points: {'ALL 478 POINTS' if Config.SHOW_ALL_FACE_LANDMARKS else 'KEY POINTS ONLY'}")
+    print(f"  • Landmark numbers: {'ENABLED' if Config.SHOW_LANDMARK_NUMBERS else 'DISABLED'}")
+    print(f"  • Eye tracking: {'ENABLED' if Config.EYE_TRACKING_ENABLED else 'DISABLED'}")
     
     if Config.FACE_MATCHING_ENABLED:
         print("\nFACE VERIFICATION:")

@@ -32,6 +32,13 @@ class Config:
     FACE_MIN_DETECTION_CONFIDENCE = 0.7  # Minimum confidence for face detection
     FACE_MIN_TRACKING_CONFIDENCE = 0.5  # Minimum confidence for face tracking
     
+    # Face Mesh Visualization Settings
+    SHOW_ALL_FACE_LANDMARKS = True  # Show all 478 face mesh points (set False for key points only)
+    SHOW_LANDMARK_NUMBERS = False  # Show landmark index numbers (Warning: lots of text!)
+    
+    # Eye Tracking Settings
+    EYE_TRACKING_ENABLED = True  # Enable eye movement detection and tracking (MediaPipe-based)
+    
     # Face Matching Settings (DeepFace)
     FACE_MATCHING_ENABLED = True  # Enable face verification against participant
     FACE_MATCHING_BACKEND = "Facenet"  # DeepFace backend: VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, ArcFace, Dlib, SFace
@@ -48,7 +55,9 @@ class Config:
     
     # Session Logging Settings
     PROCTORING_LOG_DIR = "logs/proctoring"  # Directory for session logs
+    EYE_MOVEMENT_LOG_DIR = "logs/eye_movements"  # Directory for eye movement logs
     SAVE_SESSION_LOGS = True  # Save session logs to file
+    LOG_ALERTS_ONLY = True  # Only log alert messages (no info/debug to console)
     
     # Alert Settings
     ALERT_COOLDOWN_SECONDS = 5  # Minimum time between same alert types

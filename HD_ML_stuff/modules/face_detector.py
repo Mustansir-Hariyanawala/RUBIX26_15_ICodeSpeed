@@ -23,6 +23,7 @@ class FaceDetector(BaseDetector):
     """
     Face detection using MediaPipe Tasks Vision API
     Uses Face Landmarker for detecting faces and extracting 478 facial landmarks
+    (468 face mesh points + 10 iris landmarks = 478 total)
     """
     
     def __init__(
@@ -189,7 +190,7 @@ class FaceDetector(BaseDetector):
             self.logger.error(f"Error detecting faces: {e}")
             return []
     
-    def draw_faces(self, frame, face_meshes, color=(0, 255, 0), thickness=2):
+    def draw_faces(self, frame, face_meshes, color=(0, 255, 0), thickness=2, show_all_landmarks=False, show_landmark_numbers=False):
         """
         Draw bounding boxes and landmarks on detected faces
         
@@ -198,6 +199,8 @@ class FaceDetector(BaseDetector):
             face_meshes: List of face mesh data from detect()
             color: Box color (B, G, R)
             thickness: Box thickness
+            show_all_landmarks: If True, shows all 478 face mesh points. If False, shows only key points
+            show_landmark_numbers: If True, displays landmark index numbers (use with caution - lots of text!)
             
         Returns:
             Annotated frame
@@ -224,24 +227,42 @@ class FaceDetector(BaseDetector):
                 2
             )
             
-            # Optionally draw key landmarks if available
+            # Draw landmarks based on mode
             if face_data['landmarks'] and len(face_data['landmarks']) > 0:
-                # Draw only key points (eyes, nose, mouth) for clarity
-                key_indices = [33, 133, 362, 263, 1, 61, 291]  # Eyes, nose tip, mouth corners
-                for idx in key_indices:
-                    if idx < len(face_data['landmarks']):
-                        lm = face_data['landmarks'][idx]
-                        cv2.circle(output_frame, (lm['x'], lm['y']), 2, (0, 255, 255), -1)
+                if show_all_landmarks:
+                    # Draw all 478 face mesh landmarks
+                    for idx, lm in enumerate(face_data['landmarks']):
+                        # Use different colors for different facial regions
+                        if idx < 468:  # Face contour and features
+                            point_color = (0, 255, 255)  # Yellow
+                        else:  # Iris landmarks (468-477)
+                            point_color = (255, 0, 255)  # Magenta for iris points
+                        
+                        cv2.circle(output_frame, (lm['x'], lm['y']), 1, point_color, -1)
+                        
+                        # Optionally draw landmark numbers (warning: lots of text!)
+                        if show_landmark_numbers and idx % 10 == 0:  # Show every 10th number
+                            cv2.putText(output_frame, str(idx), (lm['x']+2, lm['y']-2),
+                                       cv2.FONT_HERSHEY_PLAIN, 0.3, (255, 255, 255), 1)
+                else:
+                    # Draw only key points (eyes, nose, mouth) for clarity
+                    key_indices = [33, 133, 362, 263, 1, 61, 291]  # Eyes, nose tip, mouth corners
+                    for idx in key_indices:
+                        if idx < len(face_data['landmarks']):
+                            lm = face_data['landmarks'][idx]
+                            cv2.circle(output_frame, (lm['x'], lm['y']), 2, (0, 255, 255), -1)
         
         return output_frame
     
-    def process_frame(self, frame, draw=True):
+    def process_frame(self, frame, draw=True, show_all_landmarks=False, show_landmark_numbers=False):
         """
         Process frame: detect faces
         
         Args:
             frame: Input frame
             draw: Whether to draw annotations
+            show_all_landmarks: If True, shows all 478 face mesh points
+            show_landmark_numbers: If True, displays landmark index numbers
             
         Returns:
             tuple: (annotated_frame, detection_results)
@@ -256,12 +277,15 @@ class FaceDetector(BaseDetector):
         detection_results = {
             "detector": self.name,
             "num_faces": len(face_meshes),
-            "face_meshes": face_meshes
+            "face_meshes": face_meshes,
+            "total_landmarks_per_face": 478  # MediaPipe Face Landmarker: 468 face + 10 iris = 478
         }
         
         # Draw annotations
         if draw and len(face_meshes) > 0:
-            output_frame = self.draw_faces(frame, face_meshes)
+            output_frame = self.draw_faces(frame, face_meshes, 
+                                          show_all_landmarks=show_all_landmarks,
+                                          show_landmark_numbers=show_landmark_numbers)
         else:
             output_frame = frame
         

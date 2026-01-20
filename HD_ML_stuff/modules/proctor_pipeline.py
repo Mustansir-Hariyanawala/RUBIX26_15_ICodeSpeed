@@ -83,6 +83,13 @@ class ProctorPipeline(CameraPipeline):
             self.face_matcher = detector
         elif detector.name == "EyeDetector" or "Eye" in detector.name:
             self.eye_detector = detector
+            # Setup eye movement logger if it's an eye detector
+            if hasattr(detector, 'setup_eye_movement_logger'):
+                log_dir = getattr(self.config, 'EYE_MOVEMENT_LOG_DIR', 'logs/eye_movements')
+                detector.setup_eye_movement_logger(
+                    log_dir=log_dir,
+                    session_id=self.session_logger.session_id
+                )
         elif "Detector" in detector.name and "Face" in detector.name:
             # Fallback for face detectors with different names
             self.face_detector = detector
@@ -247,19 +254,30 @@ class ProctorPipeline(CameraPipeline):
             # STEP 4: After verify check eye movement
             if self.eye_detector and self.eye_detector.enabled:
                 try:
-                    eye_result = self.eye_detector.detect_eyes_with_keypoints(frame, face_meshes)
+                    # Use detect method to get eye data
+                    eye_detections = self.eye_detector.detect(frame, face_meshes)
                     
-                    # Check for eye movement alerts
-                    if eye_result and 'eyes' in eye_result:
-                        for eye_data in eye_result['eyes']:
-                            if eye_data.get('risk_status') == 'RISK':
-                                alert_msg = f"Suspicious eye movement detected: {eye_data.get('name', 'Unknown')} eye"
+                    # Process detections and calculate risk
+                    if eye_detections:
+                        for detection in eye_detections:
+                            # Calculate risk for this eye
+                            status, score, h_ratio, v_ratio = self.eye_detector.calculate_risk(detection)
+                            
+                            # Check for risk alerts
+                            if "RISK" in status:
+                                alert_msg = f"Suspicious eye movement detected: {detection.get('eye_name', 'Unknown')} eye - {status}"
                                 self.logger.warning(alert_msg)
                                 self.session_logger.log_alert(
                                     'eye_movement',
                                     alert_msg,
                                     'warning',
-                                    eye_data
+                                    {
+                                        'eye_name': detection.get('eye_name'),
+                                        'status': status,
+                                        'score': score,
+                                        'horizontal_ratio': h_ratio,
+                                        'vertical_ratio': v_ratio
+                                    }
                                 )
                                 self.proctoring_results["alerts"].append({
                                     "timestamp": time.time(),
@@ -267,18 +285,29 @@ class ProctorPipeline(CameraPipeline):
                                     "message": alert_msg,
                                     "severity": "warning"
                                 })
+                        
+                        # Store detections for drawing
+                        eye_result = eye_detections
                 except Exception as e:
                     self.logger.error(f"Error during eye detection: {e}")
                     self.session_logger.log_alert('eye_detection_error', f"Eye detection failed: {e}", 'info')
         
-        # Draw face meshes on frame
+        # Draw face meshes on frame with configuration
         if face_meshes and self.face_detector:
-            annotated_frame = self.face_detector.draw_faces(annotated_frame, face_meshes)
+            show_all = getattr(self.config, 'SHOW_ALL_FACE_LANDMARKS', False)
+            show_nums = getattr(self.config, 'SHOW_LANDMARK_NUMBERS', False)
+            annotated_frame = self.face_detector.draw_faces(
+                annotated_frame, 
+                face_meshes,
+                show_all_landmarks=show_all,
+                show_landmark_numbers=show_nums
+            )
         
         # Draw eye detection results if available
         if eye_result and self.eye_detector:
             try:
-                annotated_frame = self.eye_detector.draw_eye_keypoints(annotated_frame, eye_result)
+                # Use process_frame to get annotated output
+                annotated_frame, _ = self.eye_detector.process_frame(annotated_frame, face_meshes, draw=True)
             except Exception as e:
                 self.logger.error(f"Error drawing eye keypoints: {e}")
         

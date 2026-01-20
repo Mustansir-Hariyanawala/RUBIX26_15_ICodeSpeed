@@ -110,17 +110,15 @@ class ProctorLogger:
                 self.session_data['statistics']['alert_types'][alert_type] = 0
             self.session_data['statistics']['alert_types'][alert_type] += 1
             
-            # Log to file
+            # Log to file only (no console output)
             log_message = f"[{severity.upper()}] {alert_type}: {message}"
             if metadata:
                 log_message += f" | {json.dumps(metadata)}"
             
             if severity == 'critical':
                 self.logger.critical(log_message)
-                self.console_logger.critical(log_message)
             elif severity == 'warning':
                 self.logger.warning(log_message)
-                self.console_logger.warning(log_message)
             else:
                 self.logger.info(log_message)
     
