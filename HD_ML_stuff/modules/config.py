@@ -4,7 +4,7 @@ Central configuration for camera pipeline and proctoring system
 """
 
 
-class Config:
+class ProctorConfig:
     """Pipeline configuration settings"""
     
     # Camera Settings
@@ -27,7 +27,7 @@ class Config:
     FRAME_SKIP = 2  # Process every 3rd frame (0 = process all, 1 = every 2nd, 2 = every 3rd)
     
     # Face Detection Settings (MediaPipe)
-    FACE_DETECTION_ENABLED = True
+    FACE_DETECT_ENABLE = True
     FACE_MODEL_SELECTION = 1  # 0 for short-range (<2m), 1 for full-range (<5m)
     FACE_MIN_DETECTION_CONFIDENCE = 0.7  # Minimum confidence for face detection
     FACE_MIN_TRACKING_CONFIDENCE = 0.5  # Minimum confidence for face tracking
@@ -37,14 +37,18 @@ class Config:
     SHOW_LANDMARK_NUMBERS = False  # Show landmark index numbers (Warning: lots of text!)
     
     # Eye Tracking Settings
-    EYE_TRACKING_ENABLED = True  # Enable eye movement detection and tracking (MediaPipe-based)
+    EYE_TRACKING_ENABLE = True  # Enable eye movement detection and tracking (MediaPipe-based)
     
     # Face Matching Settings (DeepFace)
-    FACE_MATCHING_ENABLED = True  # Enable face verification against participant
+    FACE_MATCH_ENABLE = True  # Enable face verification against participant
     FACE_MATCHING_BACKEND = "Facenet"  # DeepFace backend: VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, ArcFace, Dlib, SFace
     FACE_MATCHING_DISTANCE_METRIC = "cosine"  # Distance metric: cosine, euclidean, euclidean_l2
     FACE_MATCHING_THRESHOLD = 0.5  # Distance threshold (model-specific, lower = stricter)
     # Recommended thresholds (cosine): VGG-Face=0.40, Facenet=0.40, Facenet512=0.30, ArcFace=0.68, Dlib=0.07, SFace=0.593, OpenFace=0.10
+    
+    # Phone Detection Settings
+    PHONE_DETECT_ENABLE = False  # Enable phone detection (requires phone detector model)
+    PHONE_MODEL_PATH = "cv_models/phone_detector.pt"  # Path to phone detection model
     
     # Proctoring Settings
     PARTICIPANT_DATA_PATH = "data/participant.png"  # Single participant reference image

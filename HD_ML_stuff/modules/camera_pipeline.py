@@ -10,7 +10,7 @@ import logging
 import time
 from .camera_input import CameraCapture
 from .display import DisplayWindow
-from .config import Config
+from .config import ProctorConfig
 
 class CameraPipeline:
     """Main pipeline class that orchestrates camera capture and display"""
@@ -20,9 +20,9 @@ class CameraPipeline:
         Initialize the camera pipeline
         
         Args:
-            config: Configuration object (uses default Config if None)
+            config: Configuration object (uses default ProctorConfig if None)
         """
-        self.config = config or Config()
+        self.config = config or ProctorConfig()
         self.camera = None
         self.display = None
         self.is_running = False

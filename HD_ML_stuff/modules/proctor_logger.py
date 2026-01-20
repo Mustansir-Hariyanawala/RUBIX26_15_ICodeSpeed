@@ -72,13 +72,13 @@ class ProctorLogger:
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
         
+        # Prevent propagation to root logger (no console output)
+        self.logger.propagate = False
+        
         # Log session start
         self.logger.info("=" * 80)
         self.logger.info(f"PROCTORING SESSION STARTED - ID: {self.session_id}")
         self.logger.info("=" * 80)
-        
-        # Console logger for important alerts
-        self.console_logger = logging.getLogger(__name__)
     
     def log_alert(self, alert_type, message, severity='warning', metadata=None):
         """

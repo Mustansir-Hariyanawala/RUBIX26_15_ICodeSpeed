@@ -9,30 +9,34 @@ import time
 from .camera_pipeline import CameraPipeline
 from .base_detector import BaseDetector
 from .proctor_logger import ProctorLogger
+from .face_detector import FaceDetector
+from .face_matcher import FaceMatcher
+from .eye_detector import EyeMovementDetector
 
 
 class ProctorPipeline(CameraPipeline):
     """
     Proctoring pipeline that inherits from CameraPipeline.
-    Manages multiple detector modules and processes frames at a configurable rate.
+    Automatically loads and manages detector modules based on configuration.
     """
     
     def __init__(self, config=None, frame_skip=2, session_id=None):
         """
-        Initialize proctoring pipeline
+        Initialize proctoring pipeline and auto-load detectors based on config
         
         Args:
-            config: Configuration object (uses default Config if None)
+            config: Configuration object (ProctorConfig)
             frame_skip: Number of frames to skip between processing (default: 2, process every 3rd frame)
             session_id: Optional session ID for logging
         """
         super().__init__(config)
         
         # Detector management
-        self.detectors = {}  # Changed to dict for easier lookup
+        self.detectors = {}
         self.face_detector = None
         self.face_matcher = None
-        self.eye_detector = None  # Add eye detector reference
+        self.eye_detector = None
+        self.phone_detector = None
         self.frame_skip = frame_skip
         self.frame_counter = 0
         
@@ -48,78 +52,122 @@ class ProctorPipeline(CameraPipeline):
         }
         
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.info(f"Proctoring pipeline initialized with frame_skip={frame_skip}, sequential processing enabled")
-        self.session_logger.log_info(f"Proctoring pipeline initialized with frame_skip={frame_skip}")
+        self.logger.info(f"Proctoring pipeline initialized with frame_skip={frame_skip}")
+        
+        # Auto-load detectors based on configuration
+        self._initialize_detectors()
     
-    def register_detector(self, detector: BaseDetector):
-        """
-        Register a detector module to the proctoring pipeline
+    def _initialize_detectors(self):
+        """Initialize all detectors based on configuration settings"""
+        self.logger.info("Auto-loading detectors based on configuration...")
         
-        Args:
-            detector: An instance of BaseDetector or its subclass
-            
-        Returns:
-            bool: True if detector was registered successfully
-        """
-        if not isinstance(detector, BaseDetector):
-            self.logger.error(f"Detector must be an instance of BaseDetector, got {type(detector)}")
-            return False
-        
-        # Initialize detector if not already initialized
-        if not detector.initialized:
-            self.logger.info(f"Initializing detector: {detector.name}")
-            if not detector.load_model():
-                self.logger.error(f"Failed to initialize detector: {detector.name}")
-                return False
-        
-        # Store detector
-        self.detectors[detector.name] = detector
-        
-        # Keep references to specific detectors for optimized pipeline
-        # Check in order of specificity to avoid false matches
-        if detector.name == "FaceDetector":
-            self.face_detector = detector
-        elif detector.name == "FaceMatcher":
-            self.face_matcher = detector
-        elif detector.name == "EyeDetector" or "Eye" in detector.name:
-            self.eye_detector = detector
-            # Setup eye movement logger if it's an eye detector
-            if hasattr(detector, 'setup_eye_movement_logger'):
-                log_dir = getattr(self.config, 'EYE_MOVEMENT_LOG_DIR', 'logs/eye_movements')
-                detector.setup_eye_movement_logger(
-                    log_dir=log_dir,
-                    session_id=self.session_logger.session_id
+        # 1. Face Detector (MediaPipe) - Required for most features
+        if getattr(self.config, 'FACE_DETECT_ENABLE', True):
+            try:
+                self.logger.info("Loading Face Detector (MediaPipe)...")
+                self.face_detector = FaceDetector(
+                    name="FaceDetector",
+                    enabled=True,
+                    model_selection=getattr(self.config, 'FACE_MODEL_SELECTION', 1),
+                    min_detection_confidence=getattr(self.config, 'FACE_MIN_DETECTION_CONFIDENCE', 0.7),
+                    min_tracking_confidence=getattr(self.config, 'FACE_MIN_TRACKING_CONFIDENCE', 0.5)
                 )
-        elif "Detector" in detector.name and "Face" in detector.name:
-            # Fallback for face detectors with different names
-            self.face_detector = detector
-        elif "Matcher" in detector.name or "Match" in detector.name:
-            # Fallback for matchers with different names
-            self.face_matcher = detector
+                
+                if self.face_detector.load_model(getattr(self.config, 'FACE_MARKER_MODEL_PATH', None)):
+                    self.detectors['FaceDetector'] = self.face_detector
+                    self.proctoring_results["detections"]['FaceDetector'] = []
+                    self.logger.info("✓ Face Detector loaded successfully")
+                else:
+                    self.logger.error("✗ Failed to load Face Detector")
+                    self.face_detector = None
+            except Exception as e:
+                self.logger.error(f"Error loading Face Detector: {e}")
+                self.face_detector = None
         
-        self.proctoring_results["detections"][detector.name] = []
-        self.logger.info(f"Registered detector: {detector.name}")
-        self.session_logger.log_info(f"Registered detector: {detector.name}")
-        return True
+        # 2. Face Matcher (DeepFace) - For identity verification
+        if getattr(self.config, 'FACE_MATCH_ENABLE', False):
+            try:
+                self.logger.info("Loading Face Matcher (DeepFace)...")
+                self.face_matcher = FaceMatcher(
+                    name="FaceMatcher",
+                    enabled=True,
+                    model_name=getattr(self.config, 'FACE_MATCHING_BACKEND', 'Facenet'),
+                    distance_metric=getattr(self.config, 'FACE_MATCHING_DISTANCE_METRIC', 'cosine'),
+                    distance_threshold=getattr(self.config, 'FACE_MATCHING_THRESHOLD', 0.5),
+                    participant_image_path=getattr(self.config, 'PARTICIPANT_DATA_PATH', 'data/participant.png')
+                )
+                
+                if self.face_matcher.load_model():
+                    self.detectors['FaceMatcher'] = self.face_matcher
+                    self.proctoring_results["detections"]['FaceMatcher'] = []
+                    self.logger.info("✓ Face Matcher loaded successfully")
+                else:
+                    self.logger.error("✗ Failed to load Face Matcher")
+                    self.face_matcher = None
+            except Exception as e:
+                self.logger.error(f"Error loading Face Matcher: {e}")
+                self.face_matcher = None
+        
+        # 3. Eye Movement Detector (MediaPipe-based)
+        if getattr(self.config, 'EYE_TRACKING_ENABLE', False):
+            try:
+                self.logger.info("Loading Eye Movement Detector (MediaPipe-based)...")
+                self.eye_detector = EyeMovementDetector(
+                    name="EyeMovementDetector",
+                    enabled=True
+                )
+                
+                if self.eye_detector.load_model():
+                    self.detectors['EyeMovementDetector'] = self.eye_detector
+                    self.proctoring_results["detections"]['EyeMovementDetector'] = []
+                    
+                    # Setup eye movement logger
+                    if hasattr(self.eye_detector, 'setup_eye_movement_logger'):
+                        log_dir = getattr(self.config, 'EYE_MOVEMENT_LOG_DIR', 'logs/eye_movements')
+                        self.eye_detector.setup_eye_movement_logger(
+                            log_dir=log_dir,
+                            session_id=self.session_logger.session_id
+                        )
+                    
+                    self.logger.info("✓ Eye Movement Detector loaded successfully")
+                else:
+                    self.logger.error("✗ Failed to load Eye Movement Detector")
+                    self.eye_detector = None
+            except Exception as e:
+                self.logger.error(f"Error loading Eye Movement Detector: {e}")
+                self.eye_detector = None
+        
+        # 4. Phone Detector (if enabled and available)
+        if getattr(self.config, 'PHONE_DETECT_ENABLE', False):
+            try:
+                self.logger.info("Loading Phone Detector...")
+                # Placeholder for phone detector - implement when ready
+                # from .phone_detector import PhoneDetector
+                # self.phone_detector = PhoneDetector(...)
+                self.logger.warning("Phone Detector not yet implemented")
+            except Exception as e:
+                self.logger.error(f"Error loading Phone Detector: {e}")
+                self.phone_detector = None
+        
+        # Summary
+        loaded_count = len([d for d in [self.face_detector, self.face_matcher, self.eye_detector, self.phone_detector] if d is not None])
+        self.logger.info(f"Detector initialization complete: {loaded_count} detector(s) loaded")
     
-    def unregister_detector(self, detector_name: str):
+    def list_detectors(self):
         """
-        Unregister a detector module by name
+        List all registered detectors
         
-        Args:
-            detector_name: Name of the detector to remove
-            
         Returns:
-            bool: True if detector was removed
+            list: List of detector information dictionaries
         """
-        if detector_name in self.detectors:
-            del self.detectors[detector_name]
-            self.logger.info(f"Unregistered detector: {detector_name}")
-            self.session_logger.log_info(f"Unregistered detector: {detector_name}")
-            return True
-        
-        self.logger.warning(f"Detector not found: {detector_name}")
-        return False
+        detector_list = []
+        for name, detector in self.detectors.items():
+            detector_list.append({
+                'name': name,
+                'enabled': detector.enabled,
+                'initialized': detector.initialized
+            })
+        return detector_list
     
     def get_detector(self, detector_name: str):
         """
@@ -132,22 +180,6 @@ class ProctorPipeline(CameraPipeline):
             BaseDetector or None: The detector instance if found
         """
         return self.detectors.get(detector_name)
-    
-    def list_detectors(self):
-        """
-        Get list of all registered detectors
-        
-        Returns:
-            list: List of detector names and their status
-        """
-        return [
-            {
-                "name": name,
-                "enabled": detector.enabled,
-                "initialized": detector.initialized
-            }
-            for name, detector in self.detectors.items()
-        ]
     
     def enable_detector(self, detector_name: str):
         """Enable a detector by name"""
@@ -164,7 +196,6 @@ class ProctorPipeline(CameraPipeline):
             detector.disable()
             return True
         return False
-    
 
     
     def process_frame(self, frame):
@@ -267,18 +298,6 @@ class ProctorPipeline(CameraPipeline):
                             if "RISK" in status:
                                 alert_msg = f"Suspicious eye movement detected: {detection.get('eye_name', 'Unknown')} eye - {status}"
                                 self.logger.warning(alert_msg)
-                                self.session_logger.log_alert(
-                                    'eye_movement',
-                                    alert_msg,
-                                    'warning',
-                                    {
-                                        'eye_name': detection.get('eye_name'),
-                                        'status': status,
-                                        'score': score,
-                                        'horizontal_ratio': h_ratio,
-                                        'vertical_ratio': v_ratio
-                                    }
-                                )
                                 self.proctoring_results["alerts"].append({
                                     "timestamp": time.time(),
                                     "type": "eye_movement",
@@ -337,10 +356,8 @@ class ProctorPipeline(CameraPipeline):
             # Match face
             result = self.face_matcher.match_with_details(face_roi)
             
-            # Log result
-            if result.get('matched'):
-                self.session_logger.log_info(f"Face verified - confidence: {result.get('confidence', 0):.2f}")
-            else:
+            # Log result only to session logger if failed
+            if not result.get('matched'):
                 self.session_logger.log_alert(
                     'face_mismatch',
                     f"Face verification failed - distance: {result.get('distance', 'N/A')}",

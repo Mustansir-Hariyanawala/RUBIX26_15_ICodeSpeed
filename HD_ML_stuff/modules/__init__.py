@@ -4,7 +4,7 @@ Camera Pipeline Modules
 
 from .camera_input import CameraCapture
 from .display import DisplayWindow
-from .config import Config
+from .config import ProctorConfig
 from .base_detector import BaseDetector
 from .face_detector import FaceDetector
 from .face_matcher import FaceMatcher
@@ -16,7 +16,7 @@ from .proctor_pipeline import ProctorPipeline
 __all__ = [
     'CameraCapture',
     'DisplayWindow', 
-    'Config',
+    'ProctorConfig',
     'BaseDetector',
     'FaceDetector',
     'FaceMatcher',

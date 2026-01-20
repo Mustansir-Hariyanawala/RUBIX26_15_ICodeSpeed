@@ -70,11 +70,11 @@ class FaceDetector(BaseDetector):
         """
         try:
             # Import config to get model path
-            from .config import Config
+            from .config import ProctorConfig
             
             # Use provided path or default from config
             if model_path is None:
-                model_path = Config.FACE_MARKER_MODEL_PATH
+                model_path = ProctorConfig.FACE_MARKER_MODEL_PATH
             
             # Verify model file exists
             model_file = Path(model_path)
