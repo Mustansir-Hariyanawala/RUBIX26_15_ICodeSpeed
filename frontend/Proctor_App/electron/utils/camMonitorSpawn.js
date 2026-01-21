@@ -390,15 +390,20 @@ class CameraMonitorSpawner {
    * @returns {string|null} Log directory path
    */
   getLogDirectory() {
-    if (!this.sessionId) {
-      return null;
+    // Check if projectPath is absolute or relative
+    const isAbsolute = path.isAbsolute(this.projectPath);
+    
+    if (isAbsolute) {
+      // If projectPath is absolute, use it directly
+      return path.join(this.projectPath, this.logDirPath);
+    } else {
+      // If projectPath is relative, join with appRoot
+      const appRoot = app.isPackaged 
+        ? path.dirname(app.getPath('exe'))
+        : path.join(__dirname, '../../../..');
+      
+      return path.join(appRoot, this.projectPath, this.logDirPath);
     }
-
-    const appRoot = app.isPackaged 
-      ? path.dirname(app.getPath('exe'))
-      : path.join(__dirname, '../../../..');
-this.projectPath, this.logDirPath
-    return path.join(appRoot, 'HD_ML_stuff', 'logs', 'proctoring', this.sessionId);
   }
 }
 
