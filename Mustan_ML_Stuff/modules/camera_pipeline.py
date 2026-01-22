@@ -7,6 +7,7 @@ YOLOv8 Face Detection Pipeline
 """
 import cv2
 import logging
+import os
 import time
 from .camera_input import CameraCapture
 from .display import DisplayWindow
@@ -29,6 +30,32 @@ class CameraPipeline:
         
         # Setup logging
         self._setup_logging()
+
+    def _cleanup_shared_memory(self):
+        """Best-effort cleanup for shared memory buffers to avoid stale frames"""
+        buffer = getattr(self, 'frame_buffer', None)
+        if not buffer:
+            return
+        try:
+            if hasattr(buffer, 'cleanup') and callable(buffer.cleanup):
+                buffer.cleanup()
+            elif hasattr(buffer, 'close') and callable(buffer.close):
+                buffer.close()
+
+            # Fallback removal if files remain after cleanup
+            file_path = getattr(buffer, 'file_path', None)
+            flag_path = getattr(buffer, 'flag_path', None)
+            for path in (file_path, flag_path):
+                if path and os.path.exists(path):
+                    os.remove(path)
+            logging.info("Shared memory buffer cleaned up")
+        except Exception as e:
+            logging.error(f"Error cleaning shared memory buffer: {e}")
+        finally:
+            try:
+                self.frame_buffer = None
+            except Exception:
+                pass
         
     def _setup_logging(self):
         """Configure logging for the pipeline"""
@@ -180,6 +207,9 @@ class CameraPipeline:
         except Exception as e:
             print(f"[DEBUG] ERROR destroying display: {e}")
             logging.error(f"Error destroying display: {e}")
+
+        # Ensure shared memory buffers are cleared so new sessions start clean
+        self._cleanup_shared_memory()
         
         print("[DEBUG] CameraPipeline Step 7: Cleanup complete")
         logging.info("Pipeline cleanup complete")

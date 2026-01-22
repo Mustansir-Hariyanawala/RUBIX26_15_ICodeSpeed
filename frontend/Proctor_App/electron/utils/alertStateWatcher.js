@@ -44,7 +44,6 @@ class AlertStateWatcher extends EventEmitter {
     constructor() {
         super();
         this.alertStateFile = null;
-        this.previousState = null;
         this.pollingInterval = null;
         this.pollInterval = 200; // Check every 200ms for faster response
         this.isWatching = false;
@@ -63,14 +62,6 @@ class AlertStateWatcher extends EventEmitter {
 
         this.alertStateFile = filePath;
         this.pollInterval = options.pollInterval || 200;
-        this.previousState = null;
-
-        // Initialize previous state
-        this.readAlertState().then(state => {
-            if (state) {
-                this.previousState = state;
-            }
-        });
 
         // Start polling
         this.pollingInterval = setInterval(() => {
@@ -91,7 +82,6 @@ class AlertStateWatcher extends EventEmitter {
         }
 
         this.isWatching = false;
-        this.previousState = null;
         this.alertStateFile = null;
 
         console.log('[AlertStateWatcher] Stopped watching');
@@ -142,7 +132,8 @@ class AlertStateWatcher extends EventEmitter {
     }
 
     /**
-     * Check for state changes
+     * Check for active alerts and emit notifications
+     * Notifications have built-in 3s timeout so no need to track state changes
      */
     async checkForChanges() {
         const currentState = await this.readAlertState();
@@ -151,43 +142,33 @@ class AlertStateWatcher extends EventEmitter {
             return;
         }
 
-        // Initialize previous state if first read
-        if (!this.previousState) {
-            this.previousState = currentState;
-            return;
-        }
+        // Check for active alerts (any value = 1)
+        const activeAlerts = this.detectStateChanges(null, currentState);
 
-        // Check for changes (0 -> 1 transitions)
-        const changes = this.detectStateChanges(this.previousState, currentState);
-
-        if (changes.length > 0) {
-            // Emit alerts for each change
-            for (const change of changes) {
-                this.emitAlert(change);
+        if (activeAlerts.length > 0) {
+            // Emit notification for each active alert
+            // The notification system handles deduplication via 3s timeout
+            for (const alert of activeAlerts) {
+                this.emitAlert(alert);
             }
-
-            // Update previous state
-            this.previousState = currentState;
         }
     }
 
     /**
-     * Detect state changes (0 -> 1 transitions)
-     * @param {Array} oldState - Previous state
+     * Detect active alerts (any alert with value=1)
+     * No need to track 0->1 transitions since notifications have 3s timeout that prevents duplicates
+     * @param {Array} oldState - Previous state (unused, kept for compatibility)
      * @param {Array} newState - Current state
-     * @returns {Array} Array of change objects
+     * @returns {Array} Array of active alert objects
      */
     detectStateChanges(oldState, newState) {
         const changes = [];
 
-        const maxLen = Math.max(oldState.length, newState.length);
-
-        for (let i = 0; i < maxLen; i++) {
-            const oldVal = oldState[i] || 0;
+        for (let i = 0; i < newState.length; i++) {
             const newVal = newState[i] || 0;
 
-            // Detect 0 -> 1 transition
-            if (oldVal === 0 && newVal === 1) {
+            // Detect any active alert (value = 1)
+            if (newVal === 1) {
                 const alertDef = ALERT_TYPES[i];
                 
                 if (alertDef) {

@@ -75,6 +75,8 @@ class SharedFrameBuffer:
         try:
             self.flag_handle = open(self.flag_path, 'r+b')
             self.flag_mmap = mmap.mmap(self.flag_handle.fileno(), 4)
+            # Ensure flag is set to enabled by default on open
+            self.enable_preview()
             self.logger.info(f"Preview flag file opened: {self.flag_path}")
         except Exception as e:
             self.logger.warning(f"Failed to open preview flag file, creating new: {e}")
@@ -122,6 +124,16 @@ class SharedFrameBuffer:
         except Exception as e:
             self.logger.error(f"Failed to open shared buffer: {e}")
             raise
+
+    def _reset_header(self):
+        """Zero out header to prevent stale frames across sessions"""
+        try:
+            if self.mmap_file:
+                self.mmap_file.seek(0)
+                self.mmap_file.write(struct.pack('6I', 0, 0, 0, 0, 0, 0))
+                self.mmap_file.flush()
+        except Exception as e:
+            self.logger.error(f"Error resetting buffer header: {e}")
     
     def is_preview_enabled(self):
         """Check if preview mode is enabled (read flag from mmap)"""
@@ -132,6 +144,39 @@ class SharedFrameBuffer:
             return False
         except Exception as e:
             self.logger.error(f"Error reading preview flag: {e}")
+            return False
+    
+    def enable_preview(self):
+        """Enable preview mode (set flag to 1)"""
+        try:
+            if self.flag_mmap:
+                self.flag_mmap.seek(0)
+                self.flag_mmap.write(struct.pack('I', 1))
+                self.flag_mmap.flush()
+                self.logger.info("Preview mode enabled")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error enabling preview: {e}")
+            return False
+    
+    def disable_preview(self):
+        """Disable preview mode (set flag to 0) and clear the buffer"""
+        try:
+            if self.flag_mmap:
+                # Set flag to disabled
+                self.flag_mmap.seek(0)
+                self.flag_mmap.write(struct.pack('I', 0))
+                self.flag_mmap.flush()
+                
+                # Clear the buffer header to prevent stale frames
+                self._reset_header()
+                
+                self.logger.info("Preview mode disabled and buffer cleared")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error disabling preview: {e}")
             return False
     
     def write_frame(self, frame, quality=70):
@@ -265,14 +310,19 @@ class SharedFrameBuffer:
     def close(self):
         """Close shared memory buffer"""
         try:
+            self._reset_header()
             if self.mmap_file:
                 self.mmap_file.close()
+                self.mmap_file = None
             if self.file_handle:
                 self.file_handle.close()
+                self.file_handle = None
             if self.flag_mmap:
                 self.flag_mmap.close()
+                self.flag_mmap = None
             if self.flag_handle:
                 self.flag_handle.close()
+                self.flag_handle = None
             self.logger.info("Closed shared buffer")
         except Exception as e:
             self.logger.error(f"Error closing buffer: {e}")

@@ -65,6 +65,7 @@ class ProctorPipeline(CameraPipeline):
 
         # Shared memory buffer for frontend frame streaming
         self.frame_buffer = None
+        self._last_preview_state = None  # Track preview state for buffer clearing
         if config.SHARED_MEMORY_ENABLED:
             try:
                 # Get absolute path to mmap file
@@ -262,11 +263,18 @@ class ProctorPipeline(CameraPipeline):
         Returns:
             Processed frame with annotations
         """
+        # Early exit if pipeline is shutting down
+        if not self.is_running:
+            return frame
+        
         self.proctoring_results["total_frames_captured"] += 1
         self.frame_counter += 1
         
         # Check if we should process this frame
         if self.frame_counter <= self.frame_skip:
+            # Flush alert state even on skipped frames for real-time updates
+            self.alert_comm.flush_if_needed()
+            
             # Skip processing, return frame as-is (no overlay if display is disabled)
             if getattr(self.config, 'DISPLAY_FEED', True):
                 return self._add_skip_overlay(frame)
@@ -282,11 +290,23 @@ class ProctorPipeline(CameraPipeline):
         
         # Write ORIGINAL frame to shared memory buffer (BEFORE annotations)
         # Only write if preview mode is enabled (checked via flag mmap)
-        if self.frame_buffer and self.frame_buffer.is_preview_enabled():
-            try:
-                self.frame_buffer.write_frame(frame, quality=70)
-            except Exception as e:
-                self.logger.error(f"Error writing frame to shared buffer: {e}")
+        if self.frame_buffer:
+            preview_enabled = self.frame_buffer.is_preview_enabled()
+            
+            # Check if preview was just disabled - clear buffer to prevent stale frames
+            if hasattr(self, '_last_preview_state') and self._last_preview_state and not preview_enabled:
+                self.logger.info("Preview disabled by frontend - clearing frame buffer")
+                self.frame_buffer._reset_header()
+            
+            # Update last preview state
+            self._last_preview_state = preview_enabled
+            
+            # Write frame if preview is enabled
+            if preview_enabled:
+                try:
+                    self.frame_buffer.write_frame(frame, quality=70)
+                except Exception as e:
+                    self.logger.error(f"Error writing frame to shared buffer: {e}")
         
         # STEP 1: MediaPipe face detector gets faces
         face_meshes = []
@@ -838,6 +858,7 @@ class ProctorPipeline(CameraPipeline):
             if hasattr(self, 'frame_buffer') and self.frame_buffer:
                 print("[DEBUG] Step 0.5: Closing shared memory buffer")
                 self.frame_buffer.cleanup()
+                self.frame_buffer = None
                 print("[DEBUG] Step 0.6: Shared memory buffer closed")
                 self.logger.info("Shared memory buffer closed and cleaned up")
         except Exception as e:
